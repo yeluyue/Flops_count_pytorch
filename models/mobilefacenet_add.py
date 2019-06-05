@@ -1,5 +1,5 @@
-from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, PReLU, ReLU, Sigmoid, Dropout2d, Dropout, AvgPool2d, \
-    MaxPool2d, AdaptiveAvgPool2d, Sequential, Module, Parameter
+from torch.nn import Linear, Conv2d, BatchNorm1d, BatchNorm2d, PReLU, ReLU, Sigmoid, ReLU6, Dropout2d, Dropout, \
+    AvgPool2d, MaxPool2d, AdaptiveAvgPool2d, Sequential, Module, Parameter
 import torch.nn.functional as F
 import torch
 from collections import namedtuple
@@ -217,6 +217,52 @@ class Residual(Module):
 
     def forward(self, x):
         return self.model(x)
+################################## mobilefacenet_sor #############################################################
+class MobileFaceNet_sor(Module):
+    # flops: 0.44G(440213728) params: 1200512
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_sor, self).__init__()
+        self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Conv_block(64, 64, kernel=(3, 3), stride=(1, 1), padding=(1, 1), groups=64)
+        self.conv_23 = Depth_Wise(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual(64, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual(128, num_block=6, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual(128, num_block=2, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7,7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+
+        out = self.conv2_dw(out)
+
+        out = self.conv_23(out)
+
+        out = self.conv_3(out)
+
+        out = self.conv_34(out)
+
+        out = self.conv_4(out)
+
+        out = self.conv_45(out)
+
+        out = self.conv_5(out)
+
+        out = self.conv_6_sep(out)
+
+        out = self.conv_6_dw(out)
+
+        out = self.conv_6_flatten(out)
+
+        out = self.linear(out)
+
+        out = self.bn(out)
+        return l2_norm(out)
 
 ################################## mobilefacenet_longer #############################################################
 
@@ -277,7 +323,6 @@ class Residual(Module):
 #
 #         out = self.bn(out)
 #         return l2_norm(out)
-################################## mobilefacenet_wider #############################################################
 
 class MobileFaceNet(Module):
     def __init__(self, embedding_size):
@@ -444,7 +489,7 @@ class MobileFaceNet_y2(Module):
         self.conv_45 = Depth_Wise(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
         self.conv_5 = Residual(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
-        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7,7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)
         self.bn = BatchNorm1d(embedding_size)
@@ -465,20 +510,179 @@ class MobileFaceNet_y2(Module):
         out = self.bn(out)
         return l2_norm(out)
 
-################################## mobilefacenet_y2 #############################################################
+################################## mobilefacenet_y2_2 #############################################################
+# flops: 0.955 params: 3082240.0
 class MobileFaceNet_y2_2(Module):
     def __init__(self, embedding_size):
         super(MobileFaceNet_y2_2, self).__init__()
         self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Residual(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_23 = Depth_Wise(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
-        self.conv_3 = Residual(64, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_34 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
-        self.conv_4 = Residual(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_45 = Depth_Wise(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
-        self.conv_5 = Residual(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv2_dw = Residual(64, num_block=1, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual(128, num_block=2, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise(128, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_4 = Residual(256, num_block=1, groups=512, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise(256, 512, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1024)
+        self.conv_5 = Residual(512, num_block=1, groups=1024, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(512, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+################################## mobilefacenet_y2 without BN in DWcon #############################################################
+class Depth_Wise_NBN(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_NBN, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block_NBN(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Conv_block_NBN(Module):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(Conv_block_NBN, self).__init__()
+        self.conv = Conv2d(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding,
+                           bias=False)
+        self.prelu = PReLU(out_c)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.prelu(x)
+        return x
+class Residual_NBN(Module):
+    def __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_NBN, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_NBN(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+class MobileFaceNet_y2_3(Module):
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_3, self).__init__()
+        self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_NBN(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise_NBN(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_NBN(64, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise_NBN(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_NBN(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise_NBN(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_NBN(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
-        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7,7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+
+################################## mobilefacenet_y2 without relu in DWcon #############################################################
+class Depth_Wise_NPR(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_NPR, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block_NPR(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Conv_block_NPR(Module):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(Conv_block_NPR, self).__init__()
+        self.conv = Conv2d(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding,
+                           bias=False)
+        self.bn = BatchNorm2d(out_c)
+
+        # self.prelu = PReLU(out_c)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        # x = self.prelu(x)
+        return x
+class Residual_NPR(Module):
+    def __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_NPR, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_NPR(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+class MobileFaceNet_y2_4(Module):
+    # FLOPS: 0.933G(933598656)    params: 2120448
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_4, self).__init__()
+        self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_NPR(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise_NPR(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_NPR(64, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise_NPR(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_NPR(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise_NPR(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_NPR(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)
         self.bn = BatchNorm1d(embedding_size)
@@ -508,7 +712,7 @@ class Depth_Wise_SE(Module):
         self.conv_dw = Conv_block(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
         self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
         self.residual = residual
-        self.semoduel = SEModule(out_c, 16)
+        self.semoduel = SEModule(out_c, 32)
 
     def forward(self, x):
         if self.residual:
@@ -567,16 +771,15 @@ class MobileFaceNet_y2_se(Module):
         out = self.bn(out)
         return l2_norm(out)
 
-
-
 ################################## mobilefacenet_24 #############################################################
+# flops: 973434688.0  params: 1934208.0
 class MobileFaceNet_24(Module):
     def __init__(self, embedding_size):
         super(MobileFaceNet_24, self).__init__()
         self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Conv_block(64, 64, kernel=(3, 3), stride=(1, 1), padding=(1, 1), groups=64)
+        self.conv2_dw = Residual(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_23 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
-        self.conv_3 = Residual(128, num_block=10, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_3 = Residual(128, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_34 = Depth_Wise(128, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
         self.conv_4 = Residual(256, num_block=3, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_45 = Depth_Wise(256, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
@@ -602,8 +805,171 @@ class MobileFaceNet_24(Module):
         out = self.linear(out)
         out = self.bn(out)
         return l2_norm(out)
+################################## MobileFaceNet_y2_5 #############################################################
+class MobileFaceNet_y2_5(Module):
+#    flops: 0.947G(947761984) params: 4607936
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_5, self).__init__()
+        self.conv1 = Conv_block(3, 16, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual(16, num_block=16, groups=32, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise(16, 32, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=32)
+        self.conv_3 = Residual(32, num_block=32, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise(32, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=64)
+        self.conv_4 = Residual(64, num_block=64, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_5 = Residual(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_56 = Depth_Wise(128, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_6 = Residual(256, num_block=2, groups=512, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(256, 512, kernel=(3, 3), stride=(2, 2), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_56(out)
+        out = self.conv_6(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+################################## MobileFaceNet_y2_6 #############################################################
+#flops: 0.999 G params: 3.856192 M
+class MobileFaceNet_y2_6(Module):
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_6, self).__init__()
+        self.conv1 = Conv_block(3, 32, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual(32, num_block=2, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise(32, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual(64, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual(128, num_block=6, groups=512, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise(128, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual(256, num_block=2, groups=2048, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(256, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
 
 
+################################## mf_y2_mbv2_t #######################################################################
+class Conv_block_mbv2(Module):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(Conv_block_mbv2, self).__init__()
+        self.conv = Conv2d(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding,
+                           bias=False)
+        self.bn = BatchNorm2d(out_c)
+        self.relu6 = ReLU6(out_c)
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu6(x)
+        return x
+class Linear_block_mbv2(Module):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(Linear_block_mbv2, self).__init__()
+        self.conv = Conv2d(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding,
+                           bias=False)
+        self.bn = BatchNorm2d(out_c)
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return x
+
+class Depth_Wise_mbv2(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), t=6):
+        super(Depth_Wise_mbv2, self).__init__()
+        self.conv = Conv_block_mbv2(in_c, out_c=t*in_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block_mbv2(t*in_c, t*in_c, groups=t*in_c, kernel=kernel, padding=padding, stride=stride)
+        self.project = Linear_block_mbv2(t*in_c, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Residual_mbv2(Module):
+    def __init__(self, c, num_block, tr, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_mbv2, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_mbv2(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, t=tr))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+class mf_y2_mbv2_t6(Module):
+    # flops: 0.922287872 G params: 3.392352 M
+    def __init__(self, embedding_size):
+        super(mf_y2_mbv2_t6, self).__init__()
+        t_scale = 6
+        self.conv1 = Conv_block_mbv2(3, 32, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_mbv2(32, num_block=1, tr=t_scale, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise_mbv2(32, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), t=t_scale)
+        self.conv_3 = Residual_mbv2(64, num_block=2, tr=t_scale, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise_mbv2(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), t=t_scale)
+        self.conv_4 = Residual_mbv2(128, num_block=4, tr=t_scale, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise_mbv2(128, 256, kernel=(3, 3), stride=(2, 2), padding=(1, 1), t=t_scale)
+        self.conv_5 = Residual_mbv2(256, num_block=2, tr=t_scale, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block_mbv2(256, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block_mbv2(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
 ##################################  Arcface head #############################################################
 
 class Arcface(Module):

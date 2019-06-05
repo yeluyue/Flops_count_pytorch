@@ -7,7 +7,11 @@ from models.MobileNetV2 import MobileNetV2
 from models.model_lib import FaceNet_20
 from models.resnet import resnet18, resnet34
 from models.mobilefacenet_add import MobileFaceNet, MobileFaceNet_22, MobileFaceNet_y2,MobileFaceNet_23,MobileFaceNet_24
-from models.mobilefacenet_add import MobileFaceNet_y2_se, MobileFaceNet_y2_2
+from models.mobilefacenet_add import MobileFaceNet_y2_se, MobileFaceNet_y2_2, MobileFaceNet_sor, MobileFaceNet_y2_3
+from models.mobilefacenet_add import MobileFaceNet_y2_4, MobileFaceNet_y2_5, MobileFaceNet_y2_6, mf_y2_mbv2_t6
+from models.mobilenetv3 import MobileNetV3_Small, MobileNetV3_Large, MobileNetV3_Large_ex2
+
+from models.sknet import SKNet
 
 
 
@@ -20,9 +24,22 @@ from models.mobilefacenet_add import MobileFaceNet_y2_se, MobileFaceNet_y2_2
 # model = resnet18()
 # model = resnet34()
 # model = MobileFaceNet_24(512)
-model = MobileFaceNet_y2_2(512)
+# model = MobileFaceNet_y2_4(512)
+# model = MobileNetV3_Small(512)
+model = MobileNetV3_Large(512)
+# model = MobileFaceNet_sor(512)
+# model = MobileFaceNet_y2_6(512)
+
+# model = mf_y2_mbv2_t6(512)
+
+
+# model = MobileNetV3_Large_ex2(512)
+
+model = SKNet(512)
 
 
 flops, params = profile(model, input_size=(1, 3, 112, 112))
-
-print(flops, params)
+#
+print('flops:', (flops/(1e9)),'G', 'params:', params/(1e6),'M')
+print('./.....................................................................................................................................................................')
+# print(model)
