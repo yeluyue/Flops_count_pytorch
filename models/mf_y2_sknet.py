@@ -230,7 +230,7 @@ class mf_y2_sknet_res(Module):
         super(mf_y2_sknet_res, self).__init__()
         Ci = 64
         self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Residual(Ci, num_block=1, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv2_dw = Residual(Ci, num_block=1, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_23 = SKUnit(Ci, Ci*2, WH=32, M=2, G=8, r=2, stride=2)
         self.conv_3 = Residual(Ci*2, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_34 = SKUnit(Ci*2, Ci*4, WH=32, M=2, G=8, r=2, stride=2)
@@ -274,6 +274,96 @@ class mf_y2_res_sknet(Module):
         self.conv_45 = Depth_Wise(Ci*4, Ci*6, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
         self.conv_5 = Residual_sk(Ci*6, num_block=2)
         self.conv_6_sep = Conv_block(Ci*6, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+
+##############################################add se model to mobileface_y2############################################
+class Depth_Wise_SE(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_SE, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+        self.semoduel = SEModule(out_c, 8)
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.project(x)
+        if self.residual:
+            x = self.semoduel(x)
+            output = short_cut + x
+        else:
+            output = x
+        return output
+class Residual_SE(Module):
+    def __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_SE, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_SE(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+class SEModule(Module):
+    def __init__(self, channels, reduction):
+        super(SEModule, self).__init__()
+        self.avg_pool = AdaptiveAvgPool2d(1)
+        self.fc1 = Conv2d(
+            channels, channels // reduction, kernel_size=1, padding=0 ,bias=False)
+        self.relu = ReLU(inplace=True)
+        self.fc2 = Conv2d(
+            channels // reduction, channels, kernel_size=1, padding=0 ,bias=False)
+        self.sigmoid = Sigmoid()
+
+    def forward(self, x):
+        module_input = x
+        x = self.avg_pool(x)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.sigmoid(x)
+        return module_input * x
+######################################################################################################################
+class mf_y2_sknet_res_se8(Module):
+    # flops: 0.946819072 G params: 3.718624 M
+    def __init__(self, embedding_size):
+        super(mf_y2_sknet_res_se8, self).__init__()
+        Ci = 64
+        self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_SE(Ci, num_block=1, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = SKUnit(Ci, Ci*2, WH=32, M=2, G=8, r=2, stride=2)
+        self.conv_3 = Residual_SE(Ci*2, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = SKUnit(Ci*2, Ci*4, WH=32, M=2, G=8, r=2, stride=2)
+        self.conv_4 = Residual_SE(Ci*4, num_block=8, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = SKUnit(Ci*4, Ci*8, WH=32, M=2, G=8, r=2, stride=2)
+        self.conv_5 = Residual_SE(Ci*8, num_block=2, groups=Ci*8, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(Ci*8, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)
