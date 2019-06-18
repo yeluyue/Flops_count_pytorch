@@ -12,7 +12,7 @@ from models.mobilefacenet_add import MobileFaceNet_y2_4, MobileFaceNet_y2_5, Mob
 from models.mobilenetv3 import MobileNetV3_Small, MobileNetV3_Large, MobileNetV3_Large_ex2, MobileNetV3_Large_epx2
 
 from models.sknet import SKNet
-from models.mf_y2_sknet import mf_y2_sknet, mf_y2_sknet_res, mf_y2_res_sknet, mf_y2_sknet_res_se8, mf_y2_sknet_res_M3
+from models.mf_y2_sknet import mf_y2_sknet, mf_y2_sknet_res, mf_y2_res_sknet, mf_y2_sknet_res_se8, mf_y2_sknet_M3_R16_res_SE8
 
 
 
@@ -43,10 +43,9 @@ from models.mf_y2_sknet import mf_y2_sknet, mf_y2_sknet_res, mf_y2_res_sknet, mf
 # model = mf_y2_sknet_res(512)
 # model = mf_y2_res_sknet(512)
 
-model = mf_y2_sknet_res_M3(512)
-
-
 # model = mf_y2_sknet_res_se8(512)
+model = mf_y2_sknet_M3_R16_res_SE8(512)
+
 
 flops, params = profile(model, input_size=(10, 3, 112, 112))
 #

@@ -178,7 +178,6 @@ class SKUnit(nn.Module):
         fea = self.feas(x)
         fea_sh = fea + self.shortcut(x)
         fea_relu = self.relu(fea_sh)
-
         return fea_relu
 
 def l2_norm(input,axis=1):
@@ -384,21 +383,23 @@ class mf_y2_sknet_res_se8(Module):
         return l2_norm(out)
 
 ######################################################################################################################
-class mf_y2_sknet_res_M3(Module):
-    # flops: 0.9469714432 G params: 3.575776 M
+class mf_y2_sknet_M3_R16_res_SE8(Module):
+    # flops: 0.8703602688 G params: 3.093568 M
     def __init__(self, embedding_size):
-        super(mf_y2_sknet_res_M3, self).__init__()
+        super(mf_y2_sknet_M3_R16_res_SE8, self).__init__()
+        G_set = 32 # 将skconv中间更改成Dwconv后，该参数失效
         Ci = 32
         m_set = 3
+        r_set = 16
         epd = 2
         self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Residual(Ci, num_block=2, groups=Ci * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_23 = SKUnit(Ci, Ci * 2, WH=32, M=m_set, G=8, r=2, stride=2)
-        self.conv_3 = Residual(Ci * 2, num_block=8, groups=Ci * 2 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_34 = SKUnit(Ci * 2, Ci * 4, WH=32, M=m_set, G=8, r=2, stride=2)
-        self.conv_4 = Residual(Ci * 4, num_block=16, groups=Ci * 4 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
-        self.conv_45 = SKUnit(Ci * 4, Ci * 8, WH=32, M=m_set, G=8, r=2, stride=2)
-        self.conv_5 = Residual(Ci * 8, num_block=4, groups=Ci * 8 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv2_dw = Residual_SE(Ci, num_block=2, groups=Ci * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = SKUnit(Ci, Ci * 2, WH=32, M=m_set, G=G_set, r=r_set, stride=2)
+        self.conv_3 = Residual_SE(Ci * 2, num_block=8, groups=Ci * 2 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = SKUnit(Ci * 2, Ci * 4, WH=32, M=m_set, G=G_set, r=r_set, stride=2)
+        self.conv_4 = Residual_SE(Ci * 4, num_block=16, groups=Ci * 4 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = SKUnit(Ci * 4, Ci * 8, WH=32, M=m_set, G=G_set, r=r_set, stride=2)
+        self.conv_5 = Residual_SE(Ci * 8, num_block=4, groups=Ci * 8 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_6_sep = Conv_block(Ci * 8, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
