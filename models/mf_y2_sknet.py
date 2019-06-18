@@ -176,9 +176,7 @@ class SKUnit(nn.Module):
         self.relu = nn.ReLU(inplace=False)
     def forward(self, x):
         fea = self.feas(x)
-        # fea_sh = fea + self.shortcut(x)
-        fea_sh = fea
-
+        fea_sh = fea + self.shortcut(x)
         fea_relu = self.relu(fea_sh)
 
         return fea_relu
@@ -223,20 +221,20 @@ class mf_y2_sknet(Module):
         out = self.bn(out)
         return l2_norm(out)
 
-
+######################################################################################################################
 class mf_y2_sknet_res(Module):
     # flops: 0.9462642688 G params: 3.439072 M
     def __init__(self, embedding_size):
         super(mf_y2_sknet_res, self).__init__()
         Ci = 64
         self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Residual(Ci, num_block=1, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv2_dw = Residual(Ci, num_block=1, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_23 = SKUnit(Ci, Ci*2, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_3 = Residual(Ci*2, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_3 = Residual(Ci*2, num_block=4, groups=Ci*4, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_34 = SKUnit(Ci*2, Ci*4, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_4 = Residual(Ci*4, num_block=8, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_4 = Residual(Ci*4, num_block=8, groups=Ci*8, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_45 = SKUnit(Ci*4, Ci*8, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_5 = Residual(Ci*8, num_block=2, groups=Ci*8, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_5 = Residual(Ci*8, num_block=2, groups=Ci*16, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_6_sep = Conv_block(Ci*8, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
@@ -259,21 +257,21 @@ class mf_y2_sknet_res(Module):
         out = self.bn(out)
         return l2_norm(out)
 
-
+######################################################################################################################
 class mf_y2_res_sknet(Module):
-    # flops: 0.9701147648 G params: 2.963776 M
+    # flops: 0.9765501952 G params: 2.662272 M
     def __init__(self, embedding_size):
         super(mf_y2_res_sknet, self).__init__()
         Ci = 64
         self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
-        self.conv2_dw = Residual_sk(Ci, num_block=2)
-        self.conv_23 = Depth_Wise(64, Ci*2, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
-        self.conv_3 = Residual_sk(Ci*2, num_block=8)
-        self.conv_34 = Depth_Wise(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
-        self.conv_4 = Residual_sk(Ci*4, num_block=14)
-        self.conv_45 = Depth_Wise(Ci*4, Ci*6, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
-        self.conv_5 = Residual_sk(Ci*6, num_block=2)
-        self.conv_6_sep = Conv_block(Ci*6, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv2_dw = Residual_sk(Ci, num_block=8)
+        self.conv_23 = Depth_Wise(Ci, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_sk(Ci, num_block=32)
+        self.conv_34 = Depth_Wise(Ci, Ci*2, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_sk(Ci*2, num_block=32)
+        self.conv_45 = Depth_Wise(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_sk(Ci*4, num_block=8)
+        self.conv_6_sep = Conv_block(Ci*4, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)
@@ -351,19 +349,57 @@ class SEModule(Module):
         return module_input * x
 ######################################################################################################################
 class mf_y2_sknet_res_se8(Module):
-    # flops: 0.946819072 G params: 3.718624 M
+    # flops: 0.9469714432 G params: 3.575776 M
     def __init__(self, embedding_size):
         super(mf_y2_sknet_res_se8, self).__init__()
         Ci = 64
         self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
         self.conv2_dw = Residual_SE(Ci, num_block=1, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_23 = SKUnit(Ci, Ci*2, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_3 = Residual_SE(Ci*2, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_3 = Residual_SE(Ci*2, num_block=2, groups=Ci*4, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_34 = SKUnit(Ci*2, Ci*4, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_4 = Residual_SE(Ci*4, num_block=8, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_4 = Residual_SE(Ci*4, num_block=4, groups=Ci*8, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_45 = SKUnit(Ci*4, Ci*8, WH=32, M=2, G=8, r=2, stride=2)
-        self.conv_5 = Residual_SE(Ci*8, num_block=2, groups=Ci*8, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_5 = Residual_SE(Ci*8, num_block=1, groups=Ci*16, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
         self.conv_6_sep = Conv_block(Ci*8, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+######################################################################################################################
+class mf_y2_sknet_res_M3(Module):
+    # flops: 0.9469714432 G params: 3.575776 M
+    def __init__(self, embedding_size):
+        super(mf_y2_sknet_res_M3, self).__init__()
+        Ci = 32
+        m_set = 3
+        epd = 2
+        self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual(Ci, num_block=2, groups=Ci * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = SKUnit(Ci, Ci * 2, WH=32, M=m_set, G=8, r=2, stride=2)
+        self.conv_3 = Residual(Ci * 2, num_block=8, groups=Ci * 2 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = SKUnit(Ci * 2, Ci * 4, WH=32, M=m_set, G=8, r=2, stride=2)
+        self.conv_4 = Residual(Ci * 4, num_block=16, groups=Ci * 4 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = SKUnit(Ci * 4, Ci * 8, WH=32, M=m_set, G=8, r=2, stride=2)
+        self.conv_5 = Residual(Ci * 8, num_block=4, groups=Ci * 8 * epd, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(Ci * 8, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()
         self.linear = Linear(512, embedding_size, bias=False)

@@ -74,6 +74,7 @@ class Block(nn.Module):
         out = out + self.shortcut(x) if self.stride==1 else out
         return out
 
+######################################################################################################################
 
 class MobileNetV3_Large(nn.Module):
     # flops: 0.490755776 G params: 1.896036 M
@@ -82,6 +83,8 @@ class MobileNetV3_Large(nn.Module):
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.hs1 = hswish()
+        #  kernel_size, in_size, expand_size, out_size, nolinear, semodule, stride
+        # Cin -> 1x1 Cexp -> BN,nonlinear -> kxk Cexp Dwconv -> 1x1 Cout -> BN -> SE
         self.bneck = nn.Sequential(
             Block(3, 16, 16, 16, nn.ReLU(inplace=True), None, 1),
             Block(3, 16, 64, 24, nn.ReLU(inplace=True), None, 2),
@@ -133,6 +136,7 @@ class MobileNetV3_Large(nn.Module):
         # out = self.linear4(out)
         return l2_norm(out)
 
+######################################################################################################################
 
 class MobileNetV3_Large_ex2(nn.Module):
     # flops: 0.93751744 G params: 2.661592 M
@@ -141,7 +145,7 @@ class MobileNetV3_Large_ex2(nn.Module):
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(32)
         self.hs1 = hswish()
-
+        # Cexp = 2 x Cin
         self.bneck = nn.Sequential(
             Block(3, 32, 32, 32, nn.ReLU(inplace=True), None, 1),
             Block(3, 32, 64, 48, nn.ReLU(inplace=True), None, 2),
@@ -192,6 +196,70 @@ class MobileNetV3_Large_ex2(nn.Module):
         return l2_norm(out)
 
 
+
+
+
+######################################################################################################################
+
+class MobileNetV3_Large_epx2(nn.Module):
+    # flops: 0.9970199552 G params: 3.318128 M
+    def __init__(self, num_classes=512):
+        super(MobileNetV3_Large_epx2, self).__init__()
+        Cin = 16
+        self.conv1 = nn.Conv2d(3, Cin, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(Cin)
+        self.hs1 = hswish()
+        #  kernel_size, in_size, expand_size, out_size, nolinear, semodule, stride
+        # Cin -> 1x1 Cexp -> BN,nonlinear -> kxk Cexp Dwconv -> 1x1 Cout -> BN -> SE
+        self.bneck = nn.Sequential(
+            Block(3, Cin, Cin * 4, Cin, nn.ReLU(inplace=True), None, 1),
+            Block(3, Cin, Cin * 6, Cin * 2, nn.ReLU(inplace=True), None, 2),
+            Block(3, Cin * 2, Cin * 8, Cin * 2, nn.ReLU(inplace=True), None, 1),
+            Block(5, Cin * 2, Cin * 12, Cin * 4, nn.ReLU(inplace=True), SeModule(Cin * 4), 2),
+            Block(5, Cin * 4, Cin * 16, Cin * 4, nn.ReLU(inplace=True), SeModule(Cin * 4), 1),
+            Block(5, Cin * 4, Cin * 16, Cin * 4, nn.ReLU(inplace=True), SeModule(Cin * 4), 1),
+            Block(3, Cin * 4, Cin * 24, Cin * 8, hswish(), None, 2),
+            Block(3, Cin * 8, Cin * 32, Cin * 8, hswish(), None, 1),
+            Block(3, Cin * 8, Cin * 32, Cin * 8, hswish(), None, 1),
+            Block(3, Cin * 8, Cin * 32, Cin * 8, hswish(), None, 1),
+            Block(3, Cin * 8, Cin * 32, Cin * 8, hswish(), SeModule(Cin * 8), 1),
+            Block(3, Cin * 8, Cin * 32, Cin * 8, hswish(), SeModule(Cin * 8), 1),
+            Block(5, Cin * 8, Cin * 32, Cin * 8, hswish(), SeModule(Cin * 8), 1),
+            Block(5, Cin * 8, Cin * 48, Cin * 16, hswish(), SeModule(Cin * 16), 2),
+            Block(5, Cin * 16, Cin * 64, Cin * 16, hswish(), SeModule(Cin * 16), 1),
+            Block(3, Cin * 16, Cin * 64, Cin * 16, hswish(), SeModule(Cin * 16), 1),
+            Block(5, Cin * 16, Cin * 64, Cin * 16, hswish(), SeModule(Cin * 16), 1)
+        )
+        self.conv2 = nn.Conv2d(Cin*16, 512, kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm2d(512)
+        self.hs2 = hswish()
+
+        self.init_params()
+
+    def init_params(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        out = self.hs1(self.bn1(self.conv1(x)))
+        out = self.bneck(out)
+        out = self.hs2(self.bn2(self.conv2(out)))
+
+        out = F.avg_pool2d(out, 7)
+        out = out.view(out.size(0), -1)
+
+        return l2_norm(out)
+########################################################################################################################
 
 
 class MobileNetV3_Small(nn.Module):
