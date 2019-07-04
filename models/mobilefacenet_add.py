@@ -771,6 +771,76 @@ class MobileFaceNet_y2_se(Module):
         out = self.bn(out)
         return l2_norm(out)
 
+
+###############################################################################################################
+class Depth_Wise_Dwse(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_Dwse, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.semoduel = SEModule(groups, 8)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.semoduel(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Residual_Dwse(Module):
+    def __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_Dwse, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_Dwse(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+class MobileFaceNet_y2_se_all(Module):
+    # flops: 0.9344871424 G params: 2.576128 M
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_se_all, self).__init__()
+        self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_Dwse(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise_Dwse(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_Dwse(64, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise_Dwse(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_Dwse(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise_Dwse(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_Dwse(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7,7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+
 ################################## mobilefacenet_24 #############################################################
 # flops: 973434688.0  params: 1934208.0
 class MobileFaceNet_24(Module):
@@ -1047,3 +1117,73 @@ class Am_softmax(Module):
 
 
 
+###############################################################################################################
+class Depth_Wise_Dwse2(Module):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_Dwse2, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.semoduel = SEModule(groups, 8)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.semoduel2 = SEModule(out_c, 8)
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.semoduel(x)
+        x = self.project(x)
+        if self.residual:
+            X = self.semoduel2(x)
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Residual_Dwse2(Module):
+    def  __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual_Dwse2, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                Depth_Wise_Dwse2(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+class MobileFaceNet_y2_se_all2(Module):
+    # flops: 0.9344871424 G params: 2.576128 M
+    def __init__(self, embedding_size):
+        super(MobileFaceNet_y2_se_all2, self).__init__()
+        self.conv1 = Conv_block(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_Dwse2(64, num_block=2, groups=64, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_23 = Depth_Wise_Dwse(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_Dwse2(64, num_block=8, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = Depth_Wise_Dwse(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_Dwse2(128, num_block=16, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = Depth_Wise_Dwse(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_Dwse2(128, num_block=4, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = Conv_block(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7,7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)

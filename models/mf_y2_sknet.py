@@ -72,14 +72,14 @@ class Residual(Module):
 
     def forward(self, x):
         return self.model(x)
-
+#######################################################################################################################
 class Residual_sk(Module):
     def __init__(self, c, num_block):
         super(Residual_sk, self).__init__()
         modules = []
         for _ in range(num_block):
             modules.append(
-                SKUnit(c, c, WH=32, M=2, G=8, r=2))
+                SKUnit(c, c, WH=32, M=3, G=8, r=2))
         self.model = Sequential(*modules)
 
     def forward(self, x):
@@ -100,6 +100,7 @@ class SKConv(nn.Module):
         """
         super(SKConv, self).__init__()
         d = max(int(features / r), L)
+        # d = 8
         self.M = M
         self.features = features
         self.convs = nn.ModuleList([])
@@ -109,7 +110,9 @@ class SKConv(nn.Module):
                 nn.BatchNorm2d(features),
                 nn.ReLU(inplace=False)
             ))
-        self.gap = nn.AvgPool2d(int(WH / stride))
+        # self.gap = nn.AvgPool2d(int(WH / stride))
+        #
+        self.gap = AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(features, d)
         self.fcs = nn.ModuleList([])
         for i in range(M):
@@ -126,7 +129,10 @@ class SKConv(nn.Module):
             else:
                 feas = torch.cat([feas, fea], dim=1)
         fea_U = torch.sum(feas, dim=1)
+        print(fea_U.shape)
         fea_s = self.gap(fea_U).squeeze_()
+        print(fea_s.shape)
+
         fea_z = self.fc(fea_s)
         for i, fc in enumerate(self.fcs):
             vector = fc(fea_z).unsqueeze_(dim=1)
@@ -141,7 +147,7 @@ class SKConv(nn.Module):
 
 
 class SKUnit(nn.Module):
-    def __init__(self, in_features, out_features, WH, M, G, r, mid_features=None, stride=1, L=32):
+    def __init__(self, in_features, out_features, WH, M, G, r, mid_features=None, stride=1, L=16):
         #
         """ Constructor
         Args:
@@ -256,7 +262,7 @@ class mf_y2_sknet_res(Module):
         out = self.bn(out)
         return l2_norm(out)
 
-######################################################################################################################
+########################################################################################################################
 class mf_y2_res_sknet(Module):
     # flops: 0.9765501952 G params: 2.662272 M
     def __init__(self, embedding_size):
@@ -270,6 +276,157 @@ class mf_y2_res_sknet(Module):
         self.conv_4 = Residual_sk(Ci*2, num_block=32)
         self.conv_45 = Depth_Wise(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
         self.conv_5 = Residual_sk(Ci*4, num_block=8)
+        self.conv_6_sep = Conv_block(Ci*4, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+
+########################################################################################################################
+class Depth_Wise_SE_R(Module):
+    def __init__(self, in_c, out_c, r, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(Depth_Wise_SE_R, self).__init__()
+        self.conv = Conv_block(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = Conv_block(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.semoduel = SEModule(groups, reduction=r)
+        self.project = Linear_block(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
+
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.semoduel(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
+
+class Residual_sk_WH_M_r(Module):
+    def __init__(self, c, WH, M, r, num_block):
+        super(Residual_sk_WH_M_r, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(
+                SKUnit(c, c, WH=WH, M=M, G=8, r=r))
+        self.model = Sequential(*modules)
+
+    def forward(self, x):
+        return self.model(x)
+
+#######################################################################################################################
+class mf_y2_SE8_res_sknet_M3_R16(Module):
+    # flops: 0.9789959168 G params: 2.591104 M
+    def __init__(self, embedding_size):
+        super(mf_y2_SE8_res_sknet_M3_R16, self).__init__()
+        Ci = 64
+        WH_set = 32
+        M_set = 3
+        r_set = 16
+        SE_set = 8
+        self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_sk_WH_M_r(Ci, WH=WH_set, M=M_set, r=r_set, num_block=4)
+        self.conv_23 = Depth_Wise_SE_R(Ci, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128, r=SE_set)
+        self.conv_3 = Residual_sk_WH_M_r(Ci, WH=WH_set, M=M_set, r=r_set, num_block=32)
+        self.conv_34 = Depth_Wise_SE_R(Ci, Ci*2, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256, r=SE_set)
+        self.conv_4 = Residual_sk_WH_M_r(Ci*2, WH=WH_set, M=M_set, r=r_set, num_block=32)
+        self.conv_45 = Depth_Wise_SE_R(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512, r=SE_set)
+        self.conv_5 = Residual_sk_WH_M_r(Ci*4, WH=WH_set, M=M_set, r=r_set,num_block=4)
+        self.conv_6_sep = Conv_block(Ci*4, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+#######################################################################################################################
+class mf_y2_SEall_res_sknet_M3_R16(Module):
+    # flops: 0.9789959168 G params: 2.591104 M
+    def __init__(self, embedding_size):
+        super(mf_y2_SEall_res_sknet_M3_R16, self).__init__()
+        Ci = 64
+        WH_set = 32
+        M_set = 3
+        r_set = 16
+        self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_sk_WH_M_r(Ci, WH=WH_set, M=M_set, r=r_set, num_block=4)
+        self.conv_23 = Depth_Wise_SE_R(Ci, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128, r=128)
+        self.conv_3 = Residual_sk_WH_M_r(Ci, WH=WH_set, M=M_set, r=r_set, num_block=32)
+        self.conv_34 = Depth_Wise_SE_R(Ci, Ci*2, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256, r=256)
+        self.conv_4 = Residual_sk_WH_M_r(Ci*2, WH=WH_set, M=M_set, r=r_set, num_block=32)
+        self.conv_45 = Depth_Wise_SE_R(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512, r=512)
+        self.conv_5 = Residual_sk_WH_M_r(Ci*4, WH=WH_set, M=M_set, r=r_set,num_block=4)
+        self.conv_6_sep = Conv_block(Ci*4, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(512, embedding_size, bias=False)
+        self.bn = BatchNorm1d(embedding_size)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2_dw(out)
+        out = self.conv_23(out)
+        out = self.conv_3(out)
+        out = self.conv_34(out)
+        out = self.conv_4(out)
+        out = self.conv_45(out)
+        out = self.conv_5(out)
+        out = self.conv_6_sep(out)
+        out = self.conv_6_dw(out)
+        out = self.conv_6_flatten(out)
+        out = self.linear(out)
+        out = self.bn(out)
+        return l2_norm(out)
+
+######################################################################################################################
+class mf_y2_res_sknet_M3(Module):
+    # flops: 0.9765501952 G params: 2.662272 M
+    def __init__(self, embedding_size):
+        super(mf_y2_res_sknet_M3, self).__init__()
+        Ci = 64
+        self.conv1 = Conv_block(3, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = Residual_sk(Ci, num_block=4)
+        self.conv_23 = Depth_Wise(Ci, Ci, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual_sk(Ci, num_block=32)
+        self.conv_34 = Depth_Wise(Ci, Ci*2, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual_sk(Ci*2, num_block=32)
+        self.conv_45 = Depth_Wise(Ci*2, Ci*4, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual_sk(Ci*4, num_block=4)
         self.conv_6_sep = Conv_block(Ci*4, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
         self.conv_6_dw = Linear_block(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
         self.conv_6_flatten = Flatten()

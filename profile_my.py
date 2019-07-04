@@ -11,7 +11,6 @@ register_hooks = {
     nn.Conv2d: count_convNd,
     nn.Conv3d: count_convNd,
     nn.ConvTranspose2d: count_convtranspose2d,
-
     nn.Linear: count_linear,
 }
 

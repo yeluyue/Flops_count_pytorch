@@ -136,6 +136,66 @@ class MobileNetV3_Large(nn.Module):
         # out = self.linear4(out)
         return l2_norm(out)
 
+
+######################################################################################################################
+
+class MobileNetV3_Large_3(nn.Module):
+    # flops: 0.490755776 G params: 1.896036 M
+    def __init__(self, num_classes=512):
+        super(MobileNetV3_Large_3, self).__init__()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.hs1 = hswish()
+        #  kernel_size, in_size, expand_size, out_size, nolinear, semodule, stride
+        # Cin -> 1x1 Cexp -> BN,nonlinear -> kxk Cexp Dwconv -> 1x1 Cout -> BN -> SE
+        self.bneck = nn.Sequential(
+            Block(3, 16, 16, 16, nn.ReLU(inplace=True), None, 1),
+            Block(3, 16, 64, 24, nn.ReLU(inplace=True), None, 2),
+            Block(3, 24, 72, 24, nn.ReLU(inplace=True), None, 1),
+            Block(5, 24, 72, 40, nn.ReLU(inplace=True), SeModule(40), 2),
+            Block(5, 40, 120, 40, nn.ReLU(inplace=True), SeModule(40), 1),
+            Block(5, 40, 120, 40, nn.ReLU(inplace=True), SeModule(40), 1),
+            Block(3, 40, 240, 80, hswish(), None, 2),
+            Block(3, 80, 200, 80, hswish(), None, 1),
+            Block(3, 80, 184, 80, hswish(), None, 1),
+            Block(3, 80, 184, 80, hswish(), None, 1),
+            Block(3, 80, 480, 112, hswish(), SeModule(112), 1),
+            Block(3, 112, 672, 112, hswish(), SeModule(112), 1),
+            Block(5, 112, 672, 160, hswish(), SeModule(160), 1),
+            Block(5, 160, 672, 160, hswish(), SeModule(160), 2),
+            Block(5, 160, 960, 160, hswish(), SeModule(160), 1),
+        )
+        self.conv2 = nn.Conv2d(160, 512, kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm2d(512)
+        self.hs2 = hswish()
+        self.linear3 = nn.Linear(512, 512)
+        self.bn3 = nn.BatchNorm1d(512)
+        self.hs3 = hswish()
+
+    def init_params(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        out = self.hs1(self.bn1(self.conv1(x)))
+        out = self.bneck(out)
+        out = self.hs2(self.bn2(self.conv2(out)))
+        out = F.avg_pool2d(out, 7)
+        out = out.view(out.size(0), -1)
+        out = self.bn3(self.linear3(out))
+
+        return l2_norm(out)
+
 ######################################################################################################################
 
 class MobileNetV3_Large_ex2(nn.Module):
@@ -191,13 +251,7 @@ class MobileNetV3_Large_ex2(nn.Module):
         out = F.avg_pool2d(out, 7)
         out = out.view(out.size(0), -1)
         out = self.bn3(self.linear3(out))
-        # out = self.hs3(self.bn3(self.linear3(out)))
-        # out = self.linear4(out)
         return l2_norm(out)
-
-
-
-
 
 ######################################################################################################################
 
